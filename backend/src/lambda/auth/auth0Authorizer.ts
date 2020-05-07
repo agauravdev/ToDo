@@ -6,13 +6,11 @@ import { createLogger } from '../../utils/logger'
 import Axios from 'axios'
 import { Jwt } from '../../auth/Jwt'
 import { JwtPayload } from '../../auth/JwtPayload'
+import * as util from 'util'
 
 const logger = createLogger('auth')
 
-// TODO: Provide a URL that can be used to download a certificate that can be used
-// to verify JWT token signature.
-// To get this URL you need to go to an Auth0 page -> Show Advanced Settings -> Endpoints -> JSON Web Key Set
-const jwksUrl = '...'
+const jwksUrl = 'https://dev-12qhwxmn.auth0.com/.well-known/jwks.json'
 
 export const handler = async (
   event: CustomAuthorizerEvent
@@ -56,12 +54,34 @@ export const handler = async (
 
 async function verifyToken(authHeader: string): Promise<JwtPayload> {
   const token = getToken(authHeader)
-  const jwt: Jwt = decode(token, { complete: true }) as Jwt
+
 
   // TODO: Implement token verification
   // You should implement it similarly to how it was implemented for the exercise for the lesson 5
   // You can read more about how to do this here: https://auth0.com/blog/navigating-rs256-and-jwks/
-  return undefined
+  const response = await Axios.get(jwksUrl);
+  const jwks = response.data;
+  const keys: any[] = jwks.keys;
+
+  logger.info("jwks - " + util.inspect(jwks, false, null, true));
+
+  // Decode the JWT and grab the kid property from the header.
+  const jwt: Jwt = decode(token, { complete: true }) as Jwt
+
+  //Find the signing key in the filtered JWKS with a matching kid property.  
+  const signingKey = keys.find(key => key.kid === jwt.header.kid);
+
+  let certValue: string = signingKey.x5c[0];
+
+  certValue = certValue.match(/.{1,64}/g).join('\n');
+  const finalCertKey: string = `-----BEGIN CERTIFICATE-----\n${certValue}\n-----END CERTIFICATE-----\n`;
+
+  logger.info("finalCertKey - " + util.inspect(finalCertKey, false, null, true));
+
+
+  let jwtPayload: JwtPayload = verify(token, finalCertKey, { algorithms: ['RS256'] }) as JwtPayload;
+
+  return jwtPayload;
 }
 
 function getToken(authHeader: string): string {

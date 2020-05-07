@@ -1,5 +1,5 @@
 service:
-  name: serverless-todo-app
+  name: todo-app
 
 plugins:
   - serverless-webpack
@@ -23,9 +23,9 @@ provider:
     apiGateway: true
 
   environment:
-    TODO_TABLE: Todos-${self:provider.stage}
+    TODOS_TABLE: Todos-${self:provider.stage}
     USER_INDEX: UserIndex
-    S3_BUCKET: todo-${self:provider.stage}
+    S3_BUCKET: todo-gaurav-${self:provider.stage}
     SIGNED_EXPIRATION: 300
 
   iamRoleStatements:
@@ -36,7 +36,6 @@ provider:
       Resource:
         - "*"
 
-
 custom:
   topicName: todo-${self:provider.stage}
   documentation:
@@ -46,57 +45,103 @@ custom:
         title: ToDo API
         description: Serverless application for Todo Application
     models:
-      - name: CreateTodoItem
+      - name: CreateTodoRequest
         contentType: application/json
-        schema: ${file(validation/create-todo-request.json)}
-
-
+        schema: ${file(models/create-todo-request.json)}
+    
+  
 functions:
-
   Auth:
     handler: src/lambda/auth/auth0Authorizer.handler
-
-  # TODO: Configure this function
   GetTodos:
     handler: src/lambda/http/getTodos.handler
     events:
       - http:
           method: get
           path: todos
-
-  # TODO: Configure this function
-  GetTodos:
+          cors: true
+    iamRoleStatementsInherit: true
+    iamRoleStatementsName: ${self:service.name}-get-todos-role-${self:provider.stage}
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - dynamodb:Query
+        Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.TODOS_TABLE}
+      - Effect: Allow
+        Action:
+          - dynamodb:Query
+        Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.TODOS_TABLE}/index/${self:provider.environment.USER_INDEX}
   CreateTodo:
     handler: src/lambda/http/createTodo.handler
     events:
       - http:
           method: post
           path: todos
-
-  # TODO: Configure this function
+          cors: true
+          reqValidatorName: RequestBodyValidator
+          documentation:
+            summary: Create a new Todo
+            description: Create a new Todo
+            requestModels: 
+              'application/json': CreateTodoRequest
+    iamRoleStatementsInherit: true
+    iamRoleStatementsName: ${self:service.name}-create-todo-role-${self:provider.stage}
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - dynamodb:PutItem
+        Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.TODOS_TABLE}
   UpdateTodo:
     handler: src/lambda/http/updateTodo.handler
     events:
       - http:
           method: patch
           path: todos/{todoId}
+          cors: true
+    iamRoleStatementsInherit: true
+    iamRoleStatementsName: ${self:service.name}-update-todo-role-${self:provider.stage}
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - dynamodb:UpdateItem
+        Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.TODOS_TABLE}
 
-  # TODO: Configure this function
   DeleteTodo:
     handler: src/lambda/http/deleteTodo.handler
     events:
       - http:
           method: delete
           path: todos/{todoId}
-
-  # TODO: Configure this function
+          cors: true
+    iamRoleStatementsInherit: true
+    iamRoleStatementsName: ${self:service.name}-delete-todo-role-${self:provider.stage}
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - dynamodb:DeleteItem
+        Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.TODOS_TABLE}
+      
   GenerateUploadUrl:
     handler: src/lambda/http/generateUploadUrl.handler
     events:
       - http:
           method: post
           path: todos/{todoId}/attachment
-
+          cors: true
+    iamRoleStatementsInherit: true
+    iamRoleStatementsName: ${self:service.name}-generate-url-role-${self:provider.stage}
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - dynamodb:UpdateItem
+        Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.TODOS_TABLE}
+      - Effect: Allow
+        Action:
+          - s3:PutObject
+          - s3:GetObject
+        Resource: arn:aws:s3:::${self:provider.environment.S3_BUCKET}/*
+      
+  
 resources:
   Resources:
     TodosTable:
@@ -142,7 +187,7 @@ resources:
                 - POST
                 - HEAD
                 - DELETE
-              MaxAge: 2500
+              MaxAge: 3000
 
     RequestBodyValidator:
       Type: AWS::ApiGateway::RequestValidator
